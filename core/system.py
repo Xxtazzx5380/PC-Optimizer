@@ -19,6 +19,14 @@ class ProcessInfo:
 
 
 @dataclass(frozen=True)
+class GpuInfo:
+    name: str
+    driver_version: str
+    driver_date: str
+    status: str
+
+
+@dataclass(frozen=True)
 class ServiceInfo:
     name: str
     display_name: str
@@ -45,6 +53,7 @@ class SystemSnapshot:
     ram_used_mb: int
     top_processes: tuple[ProcessInfo, ...]
     top_cpu_processes: tuple[ProcessInfo, ...]
+    gpus: tuple[GpuInfo, ...]
     services: tuple[ServiceInfo, ...]
     startup: tuple[StartupInfo, ...]
     power_plan: str
@@ -91,6 +100,14 @@ def snapshot() -> SystemSnapshot:
         r"""
 $os = Get-CimInstance Win32_OperatingSystem
 $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+$gpus = Get-CimInstance Win32_VideoController | ForEach-Object {
+    [pscustomobject]@{
+        Name = $_.Name
+        DriverVersion = $_.DriverVersion
+        DriverDate = [string]$_.DriverDate
+        Status = $_.Status
+    }
+}
 
 $memory = Get-Process | ForEach-Object {
     [pscustomobject]@{
@@ -103,7 +120,7 @@ $memory = Get-Process | ForEach-Object {
 
 $cpuSamples = @()
 try {
-    $cpuSamples = (Get-Counter 'Process(*)% Processor Time').CounterSamples |
+    $cpuSamples = (Get-Counter '\Process(*)\% Processor Time').CounterSamples |
         Where-Object { $_.InstanceName -ne '_Total' -and $_.InstanceName -ne 'Idle' } |
         Sort-Object CookedValue -Descending |
         Select-Object -First 25 |
@@ -145,7 +162,25 @@ $scheduled = Get-ScheduledTask -ErrorAction SilentlyContinue |
         }
     }
 
-$startup = @($startup) + @($scheduled)
+$startupFolder = @()
+$startupPaths = @(
+    [Environment]::GetFolderPath('Startup'),
+    [Environment]::GetFolderPath('CommonStartup')
+)
+foreach ($path in $startupPaths) {
+    if ($path -and (Test-Path $path)) {
+        Get-ChildItem -LiteralPath $path -Force -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                $startupFolder += [pscustomobject]@{
+                    Name = $_.Name
+                    Command = $_.FullName
+                    Source = $path
+                }
+            }
+    }
+}
+
+$startup = @($startup) + @($scheduled) + @($startupFolder)
 
 $power = powercfg /getactivescheme 2>$null
 
@@ -155,6 +190,7 @@ $power = powercfg /getactivescheme 2>$null
     Processor = $cpu.Name
     Processes = @($memory)
     CpuProcesses = @($cpuSamples)
+    Gpus = @($gpus)
     Services = @($services)
     Startup = @($startup)
     Power = $power
@@ -179,6 +215,15 @@ $power = powercfg /getactivescheme 2>$null
 
     processes = process_list(data.get("Processes", []))
     cpu_processes = process_list(data.get("CpuProcesses", []))
+    gpus = tuple(
+        GpuInfo(
+            name=str(item.get("Name", "")),
+            driver_version=str(item.get("DriverVersion", "")),
+            driver_date=str(item.get("DriverDate", "")),
+            status=str(item.get("Status", "")),
+        )
+        for item in data.get("Gpus", [])
+    )
     services = tuple(
         ServiceInfo(
             name=str(item.get("Name", "")),
@@ -213,6 +258,7 @@ $power = powercfg /getactivescheme 2>$null
         ram_used_mb=used,
         top_processes=processes,
         top_cpu_processes=cpu_processes,
+        gpus=gpus,
         services=services,
         startup=startup,
         power_plan=power,
