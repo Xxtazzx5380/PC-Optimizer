@@ -40,9 +40,8 @@ class RegistryOptimization(Optimization):
                                            self.target))
 
     def apply(self) -> None:
-        self.guard_apply()
         state = self._state()
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id,
             "registry_state": asdict(state),
         })
@@ -86,13 +85,12 @@ class VisualEffectsOptimization(RegistryOptimization):
 
     def apply(self) -> None:
         # Also back up the two related user settings in the same manifest.
-        self.guard_apply()
         states = [
             read_value("HKCU", r"Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects", "VisualFXSetting"),
             read_value("HKCU", r"Control Panel\Desktop\WindowMetrics", "MinAnimate"),
             read_value("HKCU", r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "EnableTransparency"),
         ]
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id,
             "registry_states": [asdict(x) for x in states],
         })
@@ -132,9 +130,8 @@ class TrimOptimization(Optimization):
         ))
 
     def apply(self) -> None:
-        self.guard_apply()
         before = self._query()
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id, "fsutil_before": before
         })
         result = run(["fsutil.exe", "behavior", "set", "DisableDeleteNotify", "0"])
@@ -183,9 +180,8 @@ class PagefileOptimization(Optimization):
         ))
 
     def apply(self) -> None:
-        self.guard_apply()
         before = self._state()
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id, "pagefile_state": before
         })
         result = powershell(
@@ -253,9 +249,8 @@ class PowerPlanOptimization(Optimization):
         ))
 
     def apply(self) -> None:
-        self.guard_apply()
         before = self._active()
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id, "active_scheme": before
         })
         result = run(["powercfg.exe", "/setactive", self.HIGH_PERFORMANCE])
@@ -311,9 +306,8 @@ class ProcessorPerformanceOptimization(Optimization):
         ))
 
     def apply(self) -> None:
-        self.guard_apply()
         before = {x: self._query(x) for x in self.SETTINGS}
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id, "settings": before
         })
         for alias in self.SETTINGS:
@@ -376,11 +370,10 @@ class ServiceOptimization(Optimization):
         ))
 
     def apply(self) -> None:
-        self.guard_apply()
         before = self._query()
         if not before:
             raise RuntimeError("Service is not installed")
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id, "service": before
         })
         result = run(["sc.exe", "config", self.service_name, "start=", "disabled"])
@@ -484,9 +477,8 @@ class MultimediaNetworkOptimization(Optimization):
         ))
 
     def apply(self) -> None:
-        self.guard_apply()
         states = self._states()
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id,
             "registry_states": [asdict(x) for x in states],
         })
@@ -548,11 +540,10 @@ class TikTokProcessOptimization(Optimization):
         ))
 
     def apply(self) -> None:
-        self.guard_apply()
         before = self._find()
         if not before:
             raise RuntimeError("TikTok LIVE Studio is not running")
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id, "process": before
         })
         pid = int(before["Id"])
@@ -612,11 +603,10 @@ class TikTokGpuPreferenceOptimization(Optimization):
         ))
 
     def apply(self) -> None:
-        self.guard_apply()
         if not self.executable:
             raise ValueError("Executable path is required")
         state = self._state()
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id,
             "registry_state": asdict(state),
         })
