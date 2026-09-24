@@ -11,10 +11,6 @@ from core.policy import Risk
 from optimizations.base import CheckResult, Optimization
 
 
-ROOT = Path(__file__).resolve().parents[1]
-BACKUPS = ROOT / "backups"
-
-
 class StartupRegistryOptimization(Optimization):
     """Disable one explicitly selected Run/RunOnce entry.
 
