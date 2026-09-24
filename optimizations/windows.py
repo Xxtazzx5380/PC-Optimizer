@@ -8,7 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from core.backup import create_manifest, load_manifest
+from core.backup import load_manifest
 from core.policy import Risk
 from core.registry import RegistryValueState, read_value, restore_value, write_value
 from core.runner import powershell, run
