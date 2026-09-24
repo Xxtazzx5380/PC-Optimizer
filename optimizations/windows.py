@@ -460,23 +460,27 @@ class MultimediaNetworkOptimization(Optimization):
 
     KEY = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
 
-    def _state(self) -> RegistryValueState:
-        return read_value("HKLM", self.KEY, "NetworkThrottlingIndex")
+    def _states(self) -> list[RegistryValueState]:
+        return [
+            read_value("HKLM", self.KEY, "NetworkThrottlingIndex"),
+            read_value("HKLM", self.KEY, "SystemResponsiveness"),
+        ]
 
     def check(self) -> CheckResult:
-        state = self._state()
+        states = self._states()
         return self.log_check(CheckResult(
             False,
             "Experimental network registry tweak is disabled by policy",
-            state.value if state.exists else None,
-            0xFFFFFFFF,
+            [x.value if x.exists else None for x in states],
+            [0xFFFFFFFF, 10],
         ))
 
     def apply(self) -> None:
         self.guard_apply()
-        state = self._state()
+        states = self._states()
         self.last_manifest = create_manifest(BACKUPS, {
-            "optimization": self.id, "registry_state": asdict(state)
+            "optimization": self.id,
+            "registry_states": [asdict(x) for x in states],
         })
         write_value("HKLM", self.KEY, "NetworkThrottlingIndex", 0xFFFFFFFF)
         write_value("HKLM", self.KEY, "SystemResponsiveness", 10)
@@ -486,10 +490,8 @@ class MultimediaNetworkOptimization(Optimization):
         self.log_rollback()
         if not self.last_manifest:
             raise RuntimeError("No manifest is associated with this instance.")
-        state = RegistryValueState(
-            **load_manifest(self.last_manifest)["items"]["registry_state"]["value"]
-        )
-        restore_value(state)
+        for raw in load_manifest(self.last_manifest)["items"]["registry_states"]["value"]:
+            restore_value(RegistryValueState(**raw))
 
 
 class HagsOptimization(RegistryOptimization):
