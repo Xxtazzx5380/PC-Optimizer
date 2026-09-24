@@ -120,10 +120,10 @@ $memory = Get-Process | ForEach-Object {
 
 $cpuSamples = @()
 try {
-    $cpuSamples = (Get-Counter '\Process(*)\% Processor Time').CounterSamples |
+    $cpuSamples = (Get-Counter '\Process(*)\% Processor Time' -MaxSamples 1 -SampleInterval 0.1).CounterSamples |
         Where-Object { $_.InstanceName -ne '_Total' -and $_.InstanceName -ne 'Idle' } |
         Sort-Object CookedValue -Descending |
-        Select-Object -First 25 |
+        Select-Object -First 10 |
         ForEach-Object {
             [pscustomobject]@{
                 Name = $_.InstanceName
@@ -134,15 +134,18 @@ try {
         }
 } catch {}
 
-$services = Get-Service | Where-Object Status -eq 'Running' | ForEach-Object {
-    $c = Get-CimInstance Win32_Service -Filter ("Name='" + $_.Name.Replace("'", "''") + "'")
-    [pscustomobject]@{
-        Name = $_.Name
-        DisplayName = $_.DisplayName
-        Status = $_.Status.ToString()
-        StartType = if ($c) { $c.StartMode } else { "Unknown" }
+$services = Get-CimInstance Win32_Service |
+    Where-Object State -eq 'Running' |
+    Select-Object Name, DisplayName, State, StartMode |
+    Sort-Object Name |
+    ForEach-Object {
+        [pscustomobject]@{
+            Name = $_.Name
+            DisplayName = $_.DisplayName
+            Status = $_.State
+            StartType = $_.StartMode
+        }
     }
-} | Sort-Object Name
 
 $startup = Get-CimInstance Win32_StartupCommand | ForEach-Object {
     [pscustomobject]@{
