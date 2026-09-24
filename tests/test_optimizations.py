@@ -15,12 +15,17 @@ from optimizations.windows import (
     ProcessorPerformanceOptimization,
     ServiceOptimization,
     TelemetryOptimization,
+    TikTokGpuPreferenceOptimization,
+    TikTokProcessOptimization,
     TrimOptimization,
     VisualEffectsOptimization,
 )
 from optimizations.optional import (
     DnsOptimization,
+    NagleOptimization,
     NetworkQosAudit,
+    ScheduledTaskOptimization,
+    StartupRegistryOptimization,
     StreamingEncodingAudit,
     WindowsUpdateSafetyOptimization,
 )
@@ -38,30 +43,38 @@ class OptimizationCheckTests(unittest.TestCase):
 
     @patch("optimizations.windows.run")
     def test_trim_check(self, run):
-        run.return_value = type("R", (), {"returncode": 0, "stdout": "NTFS DisableDeleteNotify = 0", "stderr": ""})()
+        run.return_value = type(
+            "R", (), {"returncode": 0, "stdout": "NTFS DisableDeleteNotify = 0", "stderr": ""}
+        )()
         self.assert_check(TrimOptimization())
 
     @patch("optimizations.windows.powershell")
     def test_pagefile_check(self, ps):
-        ps.return_value = type("R", (), {"returncode": 0, "stdout": "True", "stderr": ""})()
+        ps.return_value = type(
+            "R", (), {"returncode": 0, "stdout": '{"Automatic":true,"PageFiles":[]}', "stderr": ""}
+        )()
         self.assert_check(PagefileOptimization())
 
     @patch("optimizations.windows.run")
     def test_power_plan_check(self, run):
-        run.return_value = type("R", (), {
-            "returncode": 0,
-            "stdout": "Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)",
-            "stderr": "",
-        })()
+        run.return_value = type(
+            "R", (), {
+                "returncode": 0,
+                "stdout": "Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e (Balanced)",
+                "stderr": "",
+            }
+        )()
         self.assert_check(PowerPlanOptimization())
 
     @patch("optimizations.windows.run")
     def test_processor_check(self, run):
-        run.return_value = type("R", (), {
-            "returncode": 0,
-            "stdout": "Current AC Power Setting Index: 0x00000064",
-            "stderr": "",
-        })()
+        run.return_value = type(
+            "R", (), {
+                "returncode": 0,
+                "stdout": "Current AC Power Setting Index: 0x00000064",
+                "stderr": "",
+            }
+        )()
         self.assert_check(ProcessorPerformanceOptimization())
 
     @patch("optimizations.windows.ServiceOptimization._query")
@@ -82,18 +95,52 @@ class OptimizationCheckTests(unittest.TestCase):
         ):
             self.assert_check(cls())
 
+    @patch("optimizations.windows.TikTokProcessOptimization._find")
+    def test_tiktok_process_check(self, find):
+        find.return_value = {
+            "Id": 1234, "ProcessName": "TikTokLiveStudio",
+            "PriorityClass": "Normal", "ProcessorAffinity": 15
+        }
+        self.assert_check(TikTokProcessOptimization())
+
+    @patch("optimizations.windows.read_value")
+    def test_tiktok_gpu_check(self, read):
+        read.return_value = type("S", (), {"exists": False, "value": None})()
+        self.assert_check(TikTokGpuPreferenceOptimization(r"C:\TikTok LIVE Studio.exe"))
+
+    @patch("optimizations.optional.StartupRegistryOptimization._state")
+    def test_startup_check(self, state):
+        state.return_value = type("S", (), {"exists": True, "value": "example.exe"})()
+        self.assert_check(StartupRegistryOptimization("HKCU", "Example"))
+
+    @patch("optimizations.optional.ScheduledTaskOptimization._state")
+    def test_scheduled_task_check(self, state):
+        state.return_value = True
+        self.assert_check(ScheduledTaskOptimization(r"\Example\Task"))
+
     @patch("optimizations.optional.DnsOptimization._current")
     def test_dns_check(self, current):
         current.return_value = ["1.1.1.1"]
         self.assert_check(DnsOptimization("Ethernet", ("8.8.8.8",)))
 
+    @patch("optimizations.optional.NagleOptimization._states")
+    def test_nagle_check(self, states):
+        states.return_value = [
+            type("S", (), {"exists": False, "value": None})(),
+            type("S", (), {"exists": False, "value": None})(),
+            type("S", (), {"exists": False, "value": None})(),
+        ]
+        self.assert_check(NagleOptimization("00000000-0000-0000-0000-000000000000"))
+
     @patch("optimizations.optional.powershell")
     def test_update_safety_check(self, ps):
-        ps.return_value = type("R", (), {
-            "returncode": 0,
-            "stdout": '{"State":"Running","StartMode":"Manual"}',
-            "stderr": "",
-        })()
+        ps.return_value = type(
+            "R", (), {
+                "returncode": 0,
+                "stdout": '{"State":"Running","StartMode":"Manual"}',
+                "stderr": "",
+            }
+        )()
         self.assert_check(WindowsUpdateSafetyOptimization())
 
     @patch("optimizations.optional.powershell")
@@ -116,6 +163,11 @@ class PolicyTests(unittest.TestCase):
         self.assertFalse(OptimizationPolicy.allow_experimental)
         self.assertTrue(OptimizationPolicy.require_backup_for_mutation)
         self.assertTrue(OptimizationPolicy.require_verification)
+
+    @patch("core.system.is_admin", return_value=True)
+    def test_experimental_apply_is_blocked_before_mutation(self, _admin):
+        with self.assertRaises(PolicyViolation):
+            HagsOptimization().apply()
 
 
 if __name__ == "__main__":
