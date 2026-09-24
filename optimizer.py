@@ -166,7 +166,7 @@ def command_apply(args)->int:
 
 def _from_manifest(data:dict)->Optimization:
     oid=data["items"]["optimization"]["value"]
-    if oid=="optional-windows-services":
+    if oid.startswith("optional-windows-services"):
         return ServiceOptimization(data["items"]["service"]["value"]["Name"])
     if oid=="startup-registry-entry":
         s=data["items"]["registry_state"]["value"]
