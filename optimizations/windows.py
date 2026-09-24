@@ -297,8 +297,16 @@ class ProcessorPerformanceOptimization(Optimization):
         target = {x: 100 for x in self.SETTINGS}
         return self.log_check(CheckResult(
             current != target,
-            "AC processor settings can be tuned" if current != target else
-            "AC processor settings already at requested values",
+            (
+                "AC processor settings can be tuned. WARNING: PROCTHROTTLEMIN=100 "
+                "keeps the CPU at maximum requested performance while on AC; on "
+                "laptops this can increase heat and power use without a guaranteed "
+                "streaming benefit. Measure temperature before and after applying."
+            ) if current != target else
+            (
+                "AC processor settings already at requested values. "
+                "If PROCTHROTTLEMIN=100 is used, measure temperature and power use."
+            ),
             current, target,
         ))
 
