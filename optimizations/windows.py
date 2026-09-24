@@ -340,6 +340,7 @@ class ServiceOptimization(Optimization):
         if service_name not in self.ALLOWLIST:
             raise ValueError("Service is not in the conservative allowlist.")
         self.service_name = service_name
+        self.id = f"optional-windows-services:{service_name}"
         self.last_manifest = None
 
     def _query(self) -> dict[str, str]:
