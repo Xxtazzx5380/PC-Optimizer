@@ -249,8 +249,8 @@ class NagleOptimization(Optimization):
         super().__init__(logger)
         self.interface_guid = interface_guid
         self.key = (
-            r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\"
-            + interface_guid
+            r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
+            + "\\" + interface_guid
         )
 
     def _states(self) -> list[RegistryValueState]:
