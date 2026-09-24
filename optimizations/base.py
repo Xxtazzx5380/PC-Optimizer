@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from core.logging_utils import configure
+from core.mutation import MutationContext
 from core.policy import OptimizationPolicy, Risk
 from core.system import is_admin
 
@@ -27,6 +28,16 @@ class Optimization(ABC):
         self.logger = logger or configure(
             Path(__file__).resolve().parents[1] / "logs"
         )
+        self.last_manifest: Path | None = None
+
+    def prepare_mutation(self, items: dict[str, Any]) -> Path:
+        """Create the mandatory manifest and enforce mutation policy centrally."""
+        context = MutationContext(
+            Path(__file__).resolve().parents[1] / "backups",
+            Path(__file__).resolve().parents[1] / "logs",
+        )
+        self.last_manifest = context.prepare(self.risk, items)
+        return self.last_manifest
 
     def log_check(self, result: CheckResult) -> CheckResult:
         self.logger.info(
