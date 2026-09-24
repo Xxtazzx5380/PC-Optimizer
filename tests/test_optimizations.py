@@ -162,26 +162,24 @@ class MutationTests(unittest.TestCase):
 
     @patch("optimizations.windows.run")
     @patch("optimizations.windows.load_manifest")
-    @patch("optimizations.optional.load_manifest")
-    @patch("core.mutation.create_manifest")
+        @patch("core.mutation.create_manifest")
     @patch("core.mutation.is_admin", return_value=True)
     def test_service_apply_and_rollback(
-        self, _admin, create_manifest, optional_load_manifest,
-        windows_load_manifest, run
+        self, _admin, create_manifest, windows_load_manifest, run
     ):
         before = {"Name": "SysMain", "State": "Running", "StartMode": "Auto"}
         with patch.object(ServiceOptimization, "_query", return_value=before):
             create_manifest.return_value = self.manifest
-            optional_load_manifest.return_value = {
+            windows_load_manifest.return_value = {
                 "items": {"service": {"value": before}}
             }
             opt = ServiceOptimization("SysMain")
             opt.apply()
             self.assertEqual(opt.last_manifest, self.manifest)
-            self.assertTrue(any(c.args[:4] == ("sc.exe", "config", "SysMain", "start=")
+            self.assertTrue(any(c.args and c.args[0][:4] == ["sc.exe", "config", "SysMain", "start="]
                                 for c in run.call_args_list))
             opt.rollback()
-            self.assertTrue(any(c.args[:2] == ("sc.exe", "start") for c in run.call_args_list))
+            self.assertTrue(any(c.args and c.args[0][:2] == ["sc.exe", "start"] for c in run.call_args_list))
 
     @patch("optimizations.windows.powershell")
     @patch("optimizations.windows.load_manifest")
