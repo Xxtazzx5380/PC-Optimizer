@@ -135,8 +135,8 @@ class WindowsUpdateSafetyOptimization(Optimization):
     @staticmethod
     def _state() -> dict[str, str]:
         result = powershell(
-            "$s=Get-CimInstance Win32_Service -Filter "Name='wuauserv'"; "
-            "$s | Select-Object State,StartMode | ConvertTo-Json -Compress"
+            '$s=Get-CimInstance Win32_Service -Filter "Name=''wuauserv''"; '
+            '$s | Select-Object State,StartMode | ConvertTo-Json -Compress'
         )
         if result.returncode != 0 or not result.stdout:
             raise RuntimeError(result.stderr or "Windows Update service not found")
