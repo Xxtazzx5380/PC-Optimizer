@@ -19,10 +19,17 @@ class MutationContext:
         self.manifest: Path | None = None
 
     def prepare(self, risk: Risk, items: dict[str, Any]) -> Path:
+        current_is_admin = is_admin()
         OptimizationPolicy.check_risk(risk)
-        if OptimizationPolicy.require_admin_for_mutation and not is_admin():
+        if OptimizationPolicy.require_admin_for_mutation and not current_is_admin:
             raise PermissionError("Administrator privileges are required.")
         self.manifest = create_manifest(self.backup_root, items)
+        # The complete mutation gate is now exercised on every mutation path.
+        OptimizationPolicy.check_mutation(
+            risk=risk,
+            is_admin=current_is_admin,
+            backup_created=True,
+        )
         self.logger.info("Backup manifest created: %s", self.manifest)
         return self.manifest
 
