@@ -270,17 +270,42 @@ class ProcessorPerformanceOptimization(Optimization):
 
     SETTINGS = ("PROCTHROTTLEMIN", "PROCTHROTTLEMAX", "CPMINCORES")
 
-    @staticmethod
-    def _query(alias: str) -> int:
-        result = run([
-            "powercfg.exe", "/query", "scheme_current", "sub_processor", alias
-        ])
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr)
-        matches = re.findall(r"Current AC Power Setting Index:\s*0x([0-9a-fA-F]+)", result.stdout)
-        if not matches:
-            raise RuntimeError(f"Could not read {alias}")
-        return int(matches[-1], 16)
+    SETTING_GUIDS = {
+        "PROCTHROTTLEMIN": "893dee8e-2bef-41e0-89c6-b55d0929964c",
+        "PROCTHROTTLEMAX": "bc5038f7-23e0-4960-96da-33abaf5935ec",
+        "CPMINCORES": "0cc5b647-c1df-4637-891a-dec35c318583",
+    }
+
+    @classmethod
+    def _query(cls, alias: str) -> int:
+        try:
+            setting_guid = cls.SETTING_GUIDS[alias]
+        except KeyError as exc:
+            raise ValueError(f"Unknown processor power setting: {alias}") from exc
+
+        script = (
+            "$plan=Get-CimInstance -Namespace 'root\\\\cimv2\\\\power' "
+            "-ClassName Win32_PowerPlan | Where-Object IsActive | Select-Object -First 1; "
+            "if (-not $plan) { throw 'Active power plan not found' }; "
+            "$planGuid=[regex]::Match($plan.InstanceID, "
+            "'\\\\{([0-9a-fA-F-]+)\\\\}').Groups[1].Value; "
+            f"$settingGuid={json.dumps(setting_guid)}; "
+            "$index=Get-CimInstance -Namespace 'root\\\\cimv2\\\\power' "
+            "-ClassName Win32_PowerSettingDataIndex | "
+            "Where-Object { $_.InstanceID -eq "
+            "\"Microsoft:PowerSettingDataIndex\\\\{$planGuid}\\\\AC\\\\{$settingGuid}\" } | "
+            "Select-Object -First 1 SettingIndexValue; "
+            "if (-not $index) { throw 'Power setting data not found' }; "
+            "$index | ConvertTo-Json -Compress"
+        )
+        result = powershell(script)
+        if result.returncode != 0 or not result.stdout:
+            raise RuntimeError(result.stderr or f"Could not read {alias}")
+        try:
+            data = json.loads(result.stdout)
+            return int(data["SettingIndexValue"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Could not parse {alias} power setting") from exc
 
     def check(self) -> CheckResult:
         current = {x: self._query(x) for x in self.SETTINGS}
