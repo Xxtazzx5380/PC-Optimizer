@@ -7,6 +7,7 @@ from typing import Any
 
 from core.logging_utils import configure
 from core.policy import OptimizationPolicy, Risk
+from core.system import is_admin
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,10 @@ class Optimization(ABC):
 
     def guard_apply(self) -> None:
         OptimizationPolicy.check_risk(self.risk)
+        if OptimizationPolicy.require_admin_for_mutation and not is_admin():
+            raise PermissionError(
+                f"{self.id}: Administrator privileges are required."
+            )
         self.logger.info("APPLY %s risk=%s", self.id, self.risk.value)
 
     def log_rollback(self) -> None:
