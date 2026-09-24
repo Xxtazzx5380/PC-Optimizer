@@ -50,11 +50,10 @@ class StartupRegistryOptimization(Optimization):
         ))
 
     def apply(self) -> None:
-        self.guard_apply()
         state = self._state()
         if not state.exists:
             return
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id, "registry_state": asdict(state)
         })
         with winreg.OpenKey(
@@ -100,11 +99,10 @@ class ScheduledTaskOptimization(Optimization):
         ))
 
     def apply(self) -> None:
-        self.guard_apply()
         before = self._state()
         if not before:
             return
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id, "task_path": self.task_path,
             "was_enabled": before,
         })
@@ -151,11 +149,10 @@ class WindowsUpdateSafetyOptimization(Optimization):
         ))
 
     def apply(self) -> None:
-        self.guard_apply()
         before = self._state()
         if before.get("StartMode") != "Disabled":
             return
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id, "service": before
         })
         result = run(["sc.exe", "config", "wuauserv", "start=", "demand"])
@@ -204,9 +201,8 @@ class DnsOptimization(Optimization):
         ))
 
     def apply(self) -> None:
-        self.guard_apply()
         before = self._current()
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id, "interface_alias": self.interface_alias,
             "dns": before
         })
@@ -270,9 +266,8 @@ class NagleOptimization(Optimization):
         ))
 
     def apply(self) -> None:
-        self.guard_apply()
         states = self._states()
-        self.last_manifest = create_manifest(BACKUPS, {
+        self.last_manifest = self.prepare_mutation({
             "optimization": self.id,
             "registry_states": [asdict(x) for x in states],
         })
