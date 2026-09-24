@@ -47,10 +47,20 @@ class OptimizationCheckTests(unittest.TestCase):
         run.return_value = type("R", (), {"returncode": 0, "stdout": "Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e (Balanced)", "stderr": ""})()
         self.assert_check(PowerPlanOptimization())
 
-    @patch("optimizations.windows.run")
-    def test_processor_check(self, run):
-        run.return_value = type("R", (), {"returncode": 0, "stdout": "Current AC Power Setting Index: 0x00000064", "stderr": ""})()
+    @patch("optimizations.windows.powershell")
+    def test_processor_check_is_language_independent(self, ps):
+        ps.return_value = type(
+            "R",
+            (),
+            {"returncode": 0, "stdout": '{"SettingIndexValue":100}', "stderr": ""},
+        )()
         self.assert_check(ProcessorPerformanceOptimization())
+        self.assertEqual(ps.call_count, 3)
+        for call in ps.call_args_list:
+            script = call.args[0]
+            self.assertIn("root\\cimv2\\power", script)
+            self.assertIn("Win32_PowerSettingDataIndex", script)
+            self.assertIn("\\AC\\", script)
 
     @patch("optimizations.windows.ServiceOptimization._query")
     def test_service_check(self, query):
@@ -102,6 +112,8 @@ class OptimizationCheckTests(unittest.TestCase):
     def test_update_safety_check(self, ps):
         ps.return_value = type("R", (), {"returncode": 0, "stdout": '{"State":"Running","StartMode":"Manual"}', "stderr": ""})()
         self.assert_check(WindowsUpdateSafetyOptimization())
+        script = ps.call_args.args[0]
+        self.assertIn("Name='wuauserv'", script)
 
     @patch("optimizations.optional.powershell")
     def test_qos_audit_check(self, ps):
