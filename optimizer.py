@@ -60,6 +60,7 @@ def main() -> int:
     print(f"Architecture  : {system.architecture}")
     print(f"CPU           : {system.processor}")
     print(f"RAM           : {system.ram_used_mb} / {system.ram_total_mb} MB")
+    print(f"GPUs          : {len(system.gpus)}")
     print(f"Running svcs  : {len(system.services)}")
     print(f"Startup items : {len(system.startup)}")
     print(f"Power plan    : {system.power_plan}")
