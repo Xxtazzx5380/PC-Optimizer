@@ -162,7 +162,7 @@ class MutationTests(unittest.TestCase):
 
     @patch("optimizations.windows.run")
     @patch("optimizations.windows.load_manifest")
-        @patch("core.mutation.create_manifest")
+    @patch("core.mutation.create_manifest")
     @patch("core.mutation.is_admin", return_value=True)
     def test_service_apply_and_rollback(
         self, _admin, create_manifest, windows_load_manifest, run
