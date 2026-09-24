@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from core.backup import create_manifest, load_manifest
-from core.mutation import MutationContext
 from core.policy import Risk
 from core.registry import RegistryValueState, read_value, restore_value, write_value
 from core.runner import powershell, run
@@ -161,46 +160,71 @@ class PagefileOptimization(Optimization):
     risk = Risk.SAFE
 
     @staticmethod
-    def _get() -> bool:
-        result = powershell(
-            "(Get-CimInstance Win32_ComputerSystem).AutomaticManagedPagefile"
+    def _state() -> dict[str, Any]:
+        script = (
+            "$c=Get-CimInstance Win32_ComputerSystem; "
+            "$p=@(Get-CimInstance Win32_PageFileSetting -ErrorAction SilentlyContinue | "
+            "Select-Object Name,InitialSize,MaximumSize); "
+            "[pscustomobject]@{Automatic=[bool]$c.AutomaticManagedPagefile; "
+            "PageFiles=$p} | ConvertTo-Json -Depth 5 -Compress"
         )
+        result = powershell(script)
         if result.returncode != 0:
             raise RuntimeError(result.stderr)
-        return result.stdout.strip().lower() == "true"
+        return json.loads(result.stdout)
 
     def check(self) -> CheckResult:
-        current = self._get()
+        current = self._state()
         return self.log_check(CheckResult(
-            not current, "Windows already manages the page file" if current else
-            "Page file is not Windows-managed", current, True
+            not current.get("Automatic", False),
+            "Windows already manages the page file" if current.get("Automatic")
+            else "Page file is manually configured",
+            current, {"Automatic": True},
         ))
 
     def apply(self) -> None:
         self.guard_apply()
-        before = self._get()
+        before = self._state()
         self.last_manifest = create_manifest(BACKUPS, {
-            "optimization": self.id, "automatic_managed_pagefile": before
+            "optimization": self.id, "pagefile_state": before
         })
         result = powershell(
-            "(Get-CimInstance Win32_ComputerSystem).AutomaticManagedPagefile = $true; "
-            "Set-CimInstance -InputObject (Get-CimInstance Win32_ComputerSystem)"
+            "$c=Get-CimInstance Win32_ComputerSystem; "
+            "$c.AutomaticManagedPagefile=$true; Set-CimInstance -InputObject $c"
         )
         if result.returncode != 0:
             raise RuntimeError(result.stderr or "Unable to set pagefile policy")
-        self.logger.info("VERIFY %s OK; reboot may be required", self.id)
+        after = self._state()
+        if not after.get("Automatic", False):
+            raise RuntimeError("Pagefile verification failed")
+        self.logger.info("VERIFY %s OK; Windows now manages the page file", self.id)
 
     def rollback(self) -> None:
         self.log_rollback()
         if not self.last_manifest:
             raise RuntimeError("No manifest is associated with this instance.")
-        data = load_manifest(self.last_manifest)
-        original = bool(data["items"]["automatic_managed_pagefile"]["value"])
-        value = "$true" if original else "$false"
-        result = powershell(
+        original = load_manifest(self.last_manifest)["items"]["pagefile_state"]["value"]
+        automatic = "$true" if original.get("Automatic") else "$false"
+        script = (
             f"$c=Get-CimInstance Win32_ComputerSystem; "
-            f"$c.AutomaticManagedPagefile={value}; Set-CimInstance -InputObject $c"
+            f"$c.AutomaticManagedPagefile={automatic}; "
+            "Set-CimInstance -InputObject $c; "
+            "Get-CimInstance Win32_PageFileSetting -ErrorAction SilentlyContinue | "
+            "Remove-CimInstance -ErrorAction SilentlyContinue"
         )
+        if original.get("Automatic"):
+            result = powershell(script)
+        else:
+            pagefiles = original.get("PageFiles") or []
+            if isinstance(pagefiles, dict):
+                pagefiles = [pagefiles]
+            additions = "".join(
+                f"; New-CimInstance -ClassName Win32_PageFileSetting -Property "
+                f"@{{Name={json.dumps(str(p['Name']))};InitialSize={int(p.get('InitialSize') or 0)};"
+                f"MaximumSize={int(p.get('MaximumSize') or 0)}}} | Out-Null"
+                for p in pagefiles
+            )
+            result = powershell(script + additions)
         if result.returncode != 0:
             raise RuntimeError(result.stderr or "Pagefile rollback failed")
 
@@ -324,7 +348,7 @@ class ServiceOptimization(Optimization):
     def _query(self) -> dict[str, str]:
         result = powershell(
             f"$s=Get-CimInstance Win32_Service -Filter "
-            f""Name='{self.service_name}'"; "
+            f"\"Name='{self.service_name}'\"; "
             f"$s | Select-Object Name,State,StartMode | ConvertTo-Json -Compress"
         )
         if result.returncode != 0:
