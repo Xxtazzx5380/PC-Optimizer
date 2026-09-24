@@ -5,7 +5,6 @@ import os
 import re
 import winreg
 from dataclasses import asdict
-from pathlib import Path
 from typing import Any
 
 from core.backup import load_manifest
@@ -14,10 +13,6 @@ from core.registry import RegistryValueState, read_value, restore_value, write_v
 from core.runner import powershell, run
 from optimizations.base import CheckResult, Optimization
 
-
-ROOT = Path(__file__).resolve().parents[1]
-BACKUPS = ROOT / "backups"
-LOGS = ROOT / "logs"
 
 
 class RegistryOptimization(Optimization):
