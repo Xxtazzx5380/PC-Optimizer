@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import winreg
 from dataclasses import asdict
-from pathlib import Path
 
 from core.backup import load_manifest
 from core.registry import RegistryValueState, read_value, restore_value, write_value
