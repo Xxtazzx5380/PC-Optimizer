@@ -84,7 +84,21 @@ application.
 
 ```powershell
 python optimizer.py
+python optimizer.py list
+python optimizer.py check
+python optimizer.py apply visual-effects
+python optimizer.py rollback backups\\manifest_YYYYMMDD_HHMMSS_xxxxxx.json
 ```
+
+The default command performs a read-only audit. Mutations are never automatic.
+
+- `list` shows every optimization and its **Safe/Caution/Experimental** risk level.
+- `check` runs each configured `check()`; target-specific optimizations report when explicit parameters are required.
+- `apply <id>` shows the risk and reason, then requires typing `APPLY` before mutation.
+- `rollback <manifest>` reconstructs the optimization from the manifest and requires typing `ROLLBACK`.
+- `--allow-experimental` explicitly unlocks Experimental mutations for that invocation. **Dangerous: this is intentionally not enabled by default.**
+- Parameterized targets require explicit values, for example `--task`, `--dns-interface` + `--dns`, `--nagle-guid`, or `--tiktok-exe`.
+- A non-administrator process is refused before any mutation/rollback.
 
 The default command performs a read-only audit and writes:
 
