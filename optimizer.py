@@ -66,6 +66,13 @@ PARAMS={
     "tiktok-gpu-preference":"--tiktok-exe PATH",
 }
 PARAM_IDS=set(PARAMS)
+PARAM_RISKS={
+    "startup-registry-entry":Risk.CAUTION,
+    "scheduled-task":Risk.CAUTION,
+    "dns-servers":Risk.CAUTION,
+    "tcp-nagle":Risk.EXPERIMENTAL,
+    "tiktok-gpu-preference":Risk.CAUTION,
+}
 
 def command_audit(logger)->int:
     try:
@@ -92,21 +99,27 @@ def command_audit(logger)->int:
 
 def command_list(args)->int:
     print("ID                              RISK         STATUS       NAME")
+    configured_ids=set()
     for o in build_optimizations(args):
-        configured="unconfigured" if o.id in PARAM_IDS and o.id not in {
-            "startup-registry-entry" if args.startup_hive and args.startup_name else "",
-            "scheduled-task" if args.task else "",
-            "dns-servers" if args.dns_interface and args.dns else "",
-            "tcp-nagle" if args.nagle_guid else "",
-            "tiktok-gpu-preference" if args.tiktok_exe else "",
-        } else "configured"
-        print(f"{o.id:<31} {o.risk.value.upper():<12} {configured:<12} {o.name}")
-        if configured=="unconfigured": print(f"  -> {PARAMS[o.id]}")
+        configured_ids.add(o.id)
+        print(f"{o.id:<31} {o.risk.value.upper():<12} {'configured':<12} {o.name}")
+    names={
+        "startup-registry-entry":"Disable selected startup registry entry",
+        "scheduled-task":"Disable one explicitly selected scheduled task",
+        "dns-servers":"Set explicit DNS servers for one adapter",
+        "tcp-nagle":"Disable Nagle for an explicitly selected TCP interface",
+        "tiktok-gpu-preference":"Prefer high-performance GPU for TikTok LIVE Studio",
+    }
+    for oid,risk in PARAM_RISKS.items():
+        if oid not in configured_ids:
+            print(f"{oid:<31} {risk.value.upper():<12} {'needs target':<12} {names[oid]}")
+            print(f"  -> {PARAMS[oid]}")
     print("\nExperimental optimizations are blocked unless --allow-experimental is supplied.")
     return 0
 
 def command_check(args)->int:
     errors=0
+    configured={o.id for o in build_optimizations(args)}
     for o in build_optimizations(args):
         try:
             r=o.check()
@@ -114,6 +127,9 @@ def command_check(args)->int:
         except Exception as exc:
             errors+=1
             print(f"{o.id:<31} risk={o.risk.value:<12} CHECK ERROR: {exc}")
+    for oid,risk in PARAM_RISKS.items():
+        if oid not in configured:
+            print(f"{oid:<31} risk={risk.value:<12} applicable=N/A   reason=explicit target configuration required")
     return 1 if errors else 0
 
 def _confirm(o: Optimization, reason: str)->bool:
