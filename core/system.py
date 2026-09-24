@@ -44,6 +44,7 @@ class SystemSnapshot:
     ram_free_mb: int
     ram_used_mb: int
     top_processes: tuple[ProcessInfo, ...]
+    top_cpu_processes: tuple[ProcessInfo, ...]
     services: tuple[ServiceInfo, ...]
     startup: tuple[StartupInfo, ...]
     power_plan: str
@@ -60,7 +61,7 @@ def is_admin() -> bool:
 
 
 def _json_from_powershell(script: str) -> Any:
-    result = powershell(script)
+    result = powershell(script, timeout=45)
     if result.returncode != 0:
         raise RuntimeError(result.stderr or "PowerShell command failed.")
     if not result.stdout:
@@ -90,14 +91,32 @@ def snapshot() -> SystemSnapshot:
         r"""
 $os = Get-CimInstance Win32_OperatingSystem
 $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-$processes = Get-Process | ForEach-Object {
+
+$memory = Get-Process | ForEach-Object {
     [pscustomobject]@{
         Name = $_.ProcessName
         Pid = $_.Id
-        CPU = if ($_.CPU) { [math]::Round([double]$_.CPU, 2) } else { 0 }
+        CPU = 0
         MemoryMB = [math]::Round($_.WorkingSet64 / 1MB, 1)
     }
 } | Sort-Object MemoryMB -Descending | Select-Object -First 25
+
+$cpuSamples = @()
+try {
+    $cpuSamples = (Get-Counter 'Process(*)% Processor Time').CounterSamples |
+        Where-Object { $_.InstanceName -ne '_Total' -and $_.InstanceName -ne 'Idle' } |
+        Sort-Object CookedValue -Descending |
+        Select-Object -First 25 |
+        ForEach-Object {
+            [pscustomobject]@{
+                Name = $_.InstanceName
+                Pid = 0
+                CPU = [math]::Round([double]$_.CookedValue / [Environment]::ProcessorCount, 1)
+                MemoryMB = 0
+            }
+        }
+} catch {}
+
 $services = Get-Service | Where-Object Status -eq 'Running' | ForEach-Object {
     $c = Get-CimInstance Win32_Service -Filter ("Name='" + $_.Name.Replace("'", "''") + "'")
     [pscustomobject]@{
@@ -107,6 +126,7 @@ $services = Get-Service | Where-Object Status -eq 'Running' | ForEach-Object {
         StartType = if ($c) { $c.StartMode } else { "Unknown" }
     }
 } | Sort-Object Name
+
 $startup = Get-CimInstance Win32_StartupCommand | ForEach-Object {
     [pscustomobject]@{
         Name = $_.Name
@@ -114,16 +134,31 @@ $startup = Get-CimInstance Win32_StartupCommand | ForEach-Object {
         Source = $_.Location
     }
 }
+
+$scheduled = Get-ScheduledTask -ErrorAction SilentlyContinue |
+    Where-Object {$_.State -ne 'Disabled'} |
+    ForEach-Object {
+        [pscustomobject]@{
+            Name = $_.TaskName
+            Command = ($_.Actions | ForEach-Object {$_.Execute + ' ' + $_.Arguments}) -join ' | '
+            Source = $_.TaskPath
+        }
+    }
+
+$startup = @($startup) + @($scheduled)
+
 $power = powercfg /getactivescheme 2>$null
+
 [pscustomobject]@{
     TotalMemoryMB = [int][math]::Round($os.TotalVisibleMemorySize / 1024)
     FreeMemoryMB = [int][math]::Round($os.FreePhysicalMemory / 1024)
     Processor = $cpu.Name
-    Processes = @($processes)
+    Processes = @($memory)
+    CpuProcesses = @($cpuSamples)
     Services = @($services)
     Startup = @($startup)
     Power = $power
-} | ConvertTo-Json -Depth 6 -Compress
+} | ConvertTo-Json -Depth 7 -Compress
 """
     )
 
@@ -131,15 +166,19 @@ $power = powercfg /getactivescheme 2>$null
     free = _safe_int(data.get("FreeMemoryMB"))
     used = max(total - free, 0)
 
-    processes = tuple(
-        ProcessInfo(
-            name=str(item.get("Name", "")),
-            pid=_safe_int(item.get("Pid")),
-            cpu_percent=_safe_float(item.get("CPU")),
-            memory_mb=_safe_float(item.get("MemoryMB")),
+    def process_list(items: list[dict[str, Any]]) -> tuple[ProcessInfo, ...]:
+        return tuple(
+            ProcessInfo(
+                name=str(item.get("Name", "")),
+                pid=_safe_int(item.get("Pid")),
+                cpu_percent=_safe_float(item.get("CPU")),
+                memory_mb=_safe_float(item.get("MemoryMB")),
+            )
+            for item in items
         )
-        for item in data.get("Processes", [])
-    )
+
+    processes = process_list(data.get("Processes", []))
+    cpu_processes = process_list(data.get("CpuProcesses", []))
     services = tuple(
         ServiceInfo(
             name=str(item.get("Name", "")),
@@ -173,6 +212,7 @@ $power = powercfg /getactivescheme 2>$null
         ram_free_mb=free,
         ram_used_mb=used,
         top_processes=processes,
+        top_cpu_processes=cpu_processes,
         services=services,
         startup=startup,
         power_plan=power,
@@ -182,7 +222,4 @@ $power = powercfg /getactivescheme 2>$null
 
 def snapshot_dict() -> dict[str, Any]:
     value = asdict(snapshot())
-    value["top_processes"] = [asdict(x) for x in snapshot().top_processes]
-    value["services"] = [asdict(x) for x in snapshot().services]
-    value["startup"] = [asdict(x) for x in snapshot().startup]
     return value
