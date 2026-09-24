@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from core.policy import OptimizationPolicy, PolicyViolation, Risk
+from core.registry import RegistryValueState
 from optimizations.base import CheckResult
 from optimizations.windows import (
     BackgroundAppsOptimization, GameDvrOptimization, GameModeOptimization,
@@ -141,9 +142,7 @@ class MutationTests(unittest.TestCase):
         self, _admin, create_manifest, check_mutation, read_value,
         write_value, load_manifest, restore_value
     ):
-        read_value.side_effect = [
-            type("S", (), s)() for s in self.states
-        ]
+        read_value.side_effect = [RegistryValueState(**s) for s in self.states]
         create_manifest.return_value = self.manifest
         load_manifest.return_value = self._manifest_data(
             "visual-effects", registry_states=self.states
@@ -170,6 +169,7 @@ class MutationTests(unittest.TestCase):
         before = {"Name": "SysMain", "State": "Running", "StartMode": "Auto"}
         with patch.object(ServiceOptimization, "_query", return_value=before):
             create_manifest.return_value = self.manifest
+            run.return_value = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
             windows_load_manifest.return_value = {
                 "items": {"service": {"value": before}}
             }
@@ -199,6 +199,17 @@ class MutationTests(unittest.TestCase):
             self.assertEqual(opt.last_manifest, self.manifest)
             opt.rollback()
             self.assertEqual(powershell.call_count, 2)
+
+    def test_service_ids_are_unique(self):
+        ids = {
+            ServiceOptimization("SysMain").id,
+            ServiceOptimization("WSearch").id,
+            ServiceOptimization("DiagTrack").id,
+        }
+        self.assertEqual(len(ids), 3)
+        self.assertIn("optional-windows-services:SysMain", ids)
+        self.assertIn("optional-windows-services:WSearch", ids)
+        self.assertIn("optional-windows-services:DiagTrack", ids)
 
     def test_rollback_without_apply_is_clean_error(self):
         for opt in (
